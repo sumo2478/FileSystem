@@ -840,16 +840,24 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 {
 	ospfs_inode_t *oi = ospfs_inode(filp->f_dentry->d_inode->i_ino);
 	int retval = 0;
-	size_t amount = 0;
+	size_t amount = 0; // The amount of data that has been transferred so far
 
 	// Make sure we don't read past the end of the file!
 	// Change 'count' so we never read past the end of the file.
-	/* EXERCISE: Your code here */
+    // EXERCISE[done]:
+    // If the count is greater than what is left to read in the file then we
+    // need to reduce it down to the correct amount
+    if (*f_pos + count > oi->size) {
+        count = oi->size - *f_pos;
+    }
 
 	// Copy the data to user block by block
 	while (amount < count && retval >= 0) {
+
+        // Retrieve the block number for the particular file and file offset
 		uint32_t blockno = ospfs_inode_blockno(oi, *f_pos);
-		uint32_t n;
+		uint32_t n; // Stores the amount of bytes moved
+        uint32_t data_not_moved; // Stores the amount of data not moved
 		char *data;
 
 		// ospfs_inode_blockno returns 0 on error
@@ -858,16 +866,34 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 			goto done;
 		}
 
+        // Load the data from the block into data
 		data = ospfs_block(blockno);
 
 		// Figure out how much data is left in this block to read.
 		// Copy data into user space. Return -EFAULT if unable to write
 		// into user space.
 		// Use variable 'n' to track number of bytes moved.
-		/* EXERCISE: Your code here */
-		retval = -EIO; // Replace these lines
-		goto done;
+        // EXERCISE[done]
 
+        // Calculate the number of bytes we can read
+        if (count - amount >= OSPFS_BLKSIZE) 
+            n = OSPFS_BLKSIZE;
+        else
+            n = count - amount % OSPFS_BLKSIZE;
+
+        // Copy the data to the user space from the kernel space
+        data_not_moved = copy_to_user(buffer, data, n);
+
+        // If we were unable to write into user space then return an error
+        if (data_not_moved < 0) {
+            retval = -EFAULT;
+            goto done;
+        }
+
+        // Subtract the amount moved by the amount that was not moved
+        n -= data_not_moved;
+        
+        // Update the tracker variables
 		buffer += n;
 		amount += n;
 		*f_pos += n;
@@ -1228,6 +1254,6 @@ module_init(init_ospfs_fs)
 module_exit(exit_ospfs_fs)
 
 // Information about the module
-MODULE_AUTHOR("Skeletor");
+MODULE_AUTHOR("Collin Yen");
 MODULE_DESCRIPTION("OSPFS");
 MODULE_LICENSE("GPL");
