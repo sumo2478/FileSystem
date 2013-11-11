@@ -847,8 +847,8 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
     // EXERCISE[done]:
     // If the count is greater than what is left to read in the file then we
     // need to reduce it down to the correct amount
-    if (*f_pos + count > oi->size) {
-        count = oi->size - *f_pos;
+    if (*f_pos + count > oi->oi_size) {
+        count = oi->oi_size - *f_pos;
     }
 
 	// Copy the data to user block by block
@@ -894,6 +894,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
         n -= data_not_moved;
         
         // Update the tracker variables
+        retval += n;
 		buffer += n;
 		amount += n;
 		*f_pos += n;

@@ -4,7 +4,7 @@ FileSystem
 Creates a Linux File System
 
 Checklist:
-[IN PROGRESS] Support for reading files (ospfs-read)
+[DONE - NOT CHECKED] Support for reading files (ospfs-read)
 [] Support for reading directories (ospfs-dir-readdir)
 [] Free block bitmap bookkeeping (allocate-block, free-block)
 [] Support for changing file sizes (change-size)
