@@ -879,7 +879,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
         if (count - amount >= OSPFS_BLKSIZE) 
             n = OSPFS_BLKSIZE;
         else
-            n = count - amount % OSPFS_BLKSIZE;
+            n = count - amount;
 
         // Copy the data to the user space from the kernel space
         data_not_moved = copy_to_user(buffer, data, n);
@@ -894,7 +894,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
         n -= data_not_moved;
         
         // Update the tracker variables
-        retval += n;
+        //retval += n;
 		buffer += n;
 		amount += n;
 		*f_pos += n;
@@ -920,7 +920,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 //   where you cannot read past the end of the file, it is OK to write past
 //   the end of the file; this should simply change the file's size.
 //
-//   EXERCISE: Complete this function.
+//   EXERCISE: Complete this function.[DONE]
 
 static ssize_t
 ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *f_pos)
@@ -928,14 +928,26 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 	ospfs_inode_t *oi = ospfs_inode(filp->f_dentry->d_inode->i_ino);
 	int retval = 0;
 	size_t amount = 0;
+    int data_not_moved; // Stores the amount of data not moved
 
 	// Support files opened with the O_APPEND flag.  To detect O_APPEND,
 	// use struct file's f_flags field and the O_APPEND bit.
-	/* EXERCISE: Your code here */
+	/* EXERCISE:[DONE] */
+    if (filp->f_flags & O_APPEND) {
+        // Move the file pointer to the end of the block buffer
+        *f_pos = oi->oi_size;
+    }
 
 	// If the user is writing past the end of the file, change the file's
 	// size to accomodate the request.  (Use change_size().)
-	/* EXERCISE: Your code here */
+	/* EXERCISE:[DONE] */
+    if ((*f_pos + count) > oi->oi_size) {
+        retval = change_size(oi, *f_pos + count);  
+
+        // If we were unable to change the size of the file then return an error
+        if (retval < 0) 
+            goto done;
+    }
 
 	// Copy data block by block
 	while (amount < count && retval >= 0) {
@@ -954,10 +966,29 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		// Copy data from user space. Return -EFAULT if unable to read
 		// read user space.
 		// Keep track of the number of bytes moved in 'n'.
-		/* EXERCISE: Your code here */
-		retval = -EIO; // Replace these lines
-		goto done;
+	    /* EXERCISE: Your code here */
 
+        // Set n to the remaining portion of the block
+        n = OSPFS_BLKSIZE - (*f_pos % OSPFS_BLKSIZE);
+
+        // If we don't need the whole block then just set n to the amount of
+        // data that we need
+        if (count - amount < n) 
+            n = count - amount;
+
+        // Copy the data to the kernel space from the user
+        data_not_moved = copy_from_user(data, buffer, n);
+
+        // If we were unable to write into block memory then return an error
+        if (data_not_moved < 0) {
+            retval = -EFAULT;
+            goto done;
+        }
+
+        // Subtract the amount moved by the amount that was not moved
+        n -= data_not_moved;
+
+        // Update the tracker variables
 		buffer += n;
 		amount += n;
 		*f_pos += n;
