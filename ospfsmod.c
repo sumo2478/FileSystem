@@ -418,7 +418,7 @@ ospfs_dir_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *ign
 //   Returns: 1 at end of directory, 0 if filldir returns < 0 before the end
 //     of the directory, and -(error number) on error.
 //
-//   EXERCISE: Finish implementing this function.
+//   EXERCISE: Finish implementing this function.[DONE]
 
 static int
 ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
@@ -448,12 +448,16 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		ospfs_direntry_t *od;
 		ospfs_inode_t *entry_oi;
 
+
 		/* If at the end of the directory, set 'r' to 1 and exit
 		 * the loop.  For now we do this all the time.
 		 *
-		 * EXERCISE: Your code here */
-		r = 1;		/* Fix me! */
-		break;		/* Fix me! */
+		 * EXERCISE:[DONE] */
+        
+        if ((f_pos-2) >= dir_oi->oi_size / OSPFS_DIRENTRY_SIZE) {
+            r = 1;
+            break;
+        }
 
 		/* Get a pointer to the next entry (od) in the directory.
 		 * The file system interprets the contents of a
@@ -475,7 +479,38 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		 * advance to the next directory entry.
 		 */
 
-		/* EXERCISE: Your code here */
+		/* EXERCISE: [DONE] */
+
+        // Retrieve the directory entry
+        od = ospfs_inode_data(dir_oi, (f_pos-2)*OSPFS_DIRENTRY_SIZE);
+
+        // Retrieve the inode corresponding to the directory entry
+        if (od->od_ino) {
+            int filetype;
+
+            entry_oi = ospfs_inode(od->od_ino);
+
+            // Retrieve the type of the file
+            if (entry_oi) {
+                switch (entry_oi->oi_ftype)
+                {
+                    case OSPFS_FTYPE_REG:
+                        filetype = DT_REG;
+                        break;
+                    case OSPFS_FTYPE_DIR:
+                        filetype = DT_DIR;
+                        break;
+                    case OSPFS_FTYPE_SYMLINK:
+                        filetype = DT_LNK;
+                        break;
+                }
+            }
+
+            ok_so_far = filldir(dirent, od->od_name, strlen(od->od_name),
+                    f_pos, od->od_ino, filetype);
+        }
+
+        f_pos++;
 	}
 
 	// Save the file position and return!
@@ -552,7 +587,39 @@ ospfs_unlink(struct inode *dirino, struct dentry *dentry)
 static uint32_t
 allocate_block(void)
 {
-	/* EXERCISE: Your code here */
+	/* EXERCISE: Your code here[DONE] */
+
+    // Retrieve the starting block
+    void* bit_block = ospfs_block(OSPFS_FREEMAP_BLK);
+    uint32_t num_blocks = ospfs_super->os_nblocks;
+    uint32_t counter = ospfs_super->os_firstinob;
+    uint32_t curr = ospfs_super->os_firstinob;
+    int block_counter = 0;
+     
+    // Otherwise while we don't have a free block increase the iterator
+    while (counter < num_blocks) {
+        
+        // If the current pointer is greater than the number of bits available
+        // in a block then we need to grab the next block of the bit block
+        if (curr >= OSPFS_BLKBITSIZE)
+        {
+            curr = 0;
+            block_counter++;
+            bit_block = ospfs_block(OSPFS_FREEMAP_BLK + block_counter); 
+        }
+
+        // If the current element in the bit block is free then break
+        if (bitvector_test(bit_block, curr)) 
+        {
+            bitvector_clear(bit_block, curr);
+            return counter;
+        }
+
+        curr++;
+        counter++;
+    }
+
+    // Otherwise return that the bit block is full
 	return 0;
 }
 
@@ -571,7 +638,23 @@ allocate_block(void)
 static void
 free_block(uint32_t blockno)
 {
-	/* EXERCISE: Your code here */
+    int sizeof_bitmap = ospfs_super->os_ninodes / OSPFS_BLKINODES;
+    
+    // If the block number is valid
+    if (blockno > sizeof_bitmap + ospfs_super->os_firstinob && 
+        blockno <= ospfs_super->os_nblocks) {
+
+        // The block that contains the correct bit is equal to the start of the
+        // bitmap + the block number divided by the number of bits a block can
+        // handle
+        int block_number = OSPFS_FREEMAP_BLK + blockno / OSPFS_BLKBITSIZE;
+
+        // Retrieve the correct block
+        void* bit_block = ospfs_block(block_number);
+
+        // Set the blocks bit to free
+        bitvector_set(bit_block, blockno % OSPFS_BLKBITSIZE);
+    }
 }
 
 
