@@ -503,6 +503,8 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
                     case OSPFS_FTYPE_SYMLINK:
                         filetype = DT_LNK;
                         break;
+                    default:
+                        filetype = -1; // This is an error
                 }
             }
 
@@ -685,13 +687,15 @@ free_block(uint32_t blockno)
 // Returns: 0 if block index 'b' requires using the doubly indirect
 //	       block, -1 if it does not.
 //
-// EXERCISE: Fill in this function.
+// EXERCISE[DONE]: Fill in this function.
 
 static int32_t
 indir2_index(uint32_t b)
 {
-	// Your code here.
-	return -1;
+    if (b > OSPFS_NDIRECT + OSPFS_NINDIRECT)
+        return 0;
+    else
+        return -1;
 }
 
 
@@ -704,13 +708,22 @@ indir2_index(uint32_t b)
 //	    otherwise, the offset of the relevant indirect block within
 //		the doubly indirect block.
 //
-// EXERCISE: Fill in this function.
+// EXERCISE[DONE]: Fill in this function.
 
 static int32_t
 indir_index(uint32_t b)
 {
-	// Your code here.
-	return -1;
+    // If b is one of the file's direct blocks then return 1
+    if (b < OSPFS_NDIRECT)
+        return -1;
+    // Otherwise if b is in one of the file's indirect blocks then return 0
+    else if (b < OSPFS_NDIRECT + OSPFS_NINDIRECT)
+        return 0;
+    // Otherwise return the indirect block, with which the file's doubly
+    // indirect block is located in
+    else
+         return (b -  (OSPFS_NDIRECT + OSPFS_NINDIRECT)) / OSPFS_NINDIRECT;
+
 }
 
 
@@ -726,8 +739,24 @@ indir_index(uint32_t b)
 static int32_t
 direct_index(uint32_t b)
 {
-	// Your code here.
-	return -1;
+    if (b < OSPFS_NDIRECT)
+        return b;
+    else if(b < OSPFS_NDIRECT + OSPFS_NINDIRECT)
+        return b - (OSPFS_NDIRECT);
+    else
+        return (b - OSPFS_NDIRECT) % OSPFS_NINDIRECT;
+}
+
+void zero_out_block(uint32_t block_no)
+{
+    uint32_t* block = ospfs_block(block_no);
+    int i;
+
+    // Because each integer is equal to 4 bytes we iterate through the blksize
+    // divided by four
+    for (i = 0; i < OSPFS_BLKSIZE / 4; i++) 
+        block[i] = 0;
+
 }
 
 
@@ -769,10 +798,116 @@ add_block(ospfs_inode_t *oi)
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
 
 	// keep track of allocations to free in case of -ENOSPC
-	uint32_t *allocated[2] = { 0, 0 };
+	uint32_t allocated[2] = { 0, 0 };
+    uint32_t new_block = allocate_block();
 
-	/* EXERCISE: Your code here */
-	return -EIO; // Replace this line
+	/* EXERCISE[DONE]: Your code here */
+
+    // If we have reached the max number of blocks that can be allocated to a
+    // file then return an error
+    if (n >= OSPFS_MAXFILEBLKS)
+        return -EIO;
+
+
+    if (!new_block)
+        return -ENOSPC;
+    else
+        zero_out_block(new_block);
+
+    // If number of current blocks is less than the max direct blocks just add
+    // it to the next direct block
+    if (n < OSPFS_NDIRECT)
+    {
+        // Set the direct block to the newly allocated block
+        oi->oi_direct[n] = new_block;
+    }
+    // If number of current blocks is less than the max number of indirect
+    // blocks then add it to the indirect blocks
+    else if(indir2_index(n) != 0)
+    {
+        uint32_t *indirect_block;
+
+        // If the indirect block hasn't been allocated yet, then we must
+        // allocate it 
+        if ((n-1) < OSPFS_NDIRECT)
+        {
+            allocated[0] = allocate_block(); 
+
+            // Make sure our allocation was successful
+            if (!allocated[0])
+                free_block(new_block);
+                return -ENOSPC;
+
+            // Zero out the newly allocated block
+            zero_out_block(allocated[0]);
+        }
+
+        // If we have allocated a new block for the indirect pointers then
+        // set oi_indirect to that newly allocated block
+        if (allocated[0])
+            oi->oi_indirect = allocated[0];
+
+        indirect_block = ospfs_block(oi->oi_indirect);
+        indirect_block[direct_index(n)] = new_block;
+    }
+    // If number of current blocks is less than the max number of doubly
+    // indirect blocks then we should add it to the doubly indirect blocks
+    else
+    {
+        uint32_t* indirect_block;
+        uint32_t* doubly_indirect_block;
+
+        // If we need to allocate a block for the doubly indirect block for the
+        // first time
+        if ((n-1) < OSPFS_NDIRECT + OSPFS_NINDIRECT) {
+            allocated[0] = allocate_block();
+
+            // Make sure our allocation was successful
+            if (!allocated[0])
+                free_block(new_block);
+                return -ENOSPC;
+
+            // Zero out the newly allocated block
+            zero_out_block(allocated[0]);
+        }
+
+        // If we need to allocate a new indirect block
+        if (((n - (OSPFS_NDIRECT + OSPFS_NINDIRECT)) % OSPFS_NINDIRECT) == 0) {
+            allocated[1] = allocate_block();
+
+            // Make sure our allocation was successful
+            if (!allocated[1]) {
+                free_block(new_block);
+                if (allocated[0])
+                    free_block(allocated[0]);
+                return -ENOSPC;
+            }
+
+            // Zero out the newly allocated block
+            zero_out_block(allocated[1]);
+        }
+
+        // If we allocated a block for the doubly indirect block for the first
+        // time then we must set it
+        if (allocated[0])
+            oi->oi_indirect2 = allocated[0];
+
+        indirect_block = ospfs_block(oi->oi_indirect2);
+
+        // If we allocated a new block to be add into the doubly indirect block
+        // then we must also set it
+        if (allocated[1]) 
+            indirect_block[indir_index(n)] = allocated[1];
+
+
+        // Set the newly allocated block to the correct spot
+        doubly_indirect_block = ospfs_block(indirect_block[indir_index(n)]);
+        doubly_indirect_block[direct_index(n)] = new_block;
+
+    }
+    
+    oi->oi_size += OSPFS_BLKSIZE;
+    return 0;
 }
 
 
