@@ -938,9 +938,69 @@ remove_block(ospfs_inode_t *oi)
 {
 	// current number of blocks in file
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
+    uint32_t index = n-1;
+    uint32_t* indirect_block;
+    uint32_t* doubly_indirect_block;
 
-	/* EXERCISE: Your code here */
-	return -EIO; // Replace this line
+    // If there are no blocks allocated to the file then return 0
+    if (n == 0)
+        return -EIO;
+
+    // If we are removing a block in the direct blocks
+    if (n < OSPFS_NDIRECT)
+    {
+        free_block(oi->oi_direct[index]); 
+        oi->oi_direct[index] = 0;
+    }
+    // If we are removing a block from the indirect blocks
+    if (n < OSPFS_NDIRECT + OSPFS_NINDIRECT) {
+        uint32_t num = direct_index(index);
+
+        // If there is no indirect block return an error
+        if (!oi->oi_indirect)
+            return -EIO;
+        
+        indirect_block = ospfs_block(oi->oi_indirect);
+        free_block(indirect_block[num]);
+        indirect_block[num] = 0;
+
+        // If it's the last block in the indirect block then we must free the
+        // indirect block
+        if (!num) {
+            free_block(oi->oi_indirect);
+            oi->oi_indirect = 0;
+        }
+    }else
+    {
+        uint32_t dir_index = direct_index(index);
+        if (!oi->oi_indirect2)
+            return -EIO;
+        
+        indirect_block = ospfs_block(oi->oi_indirect2);
+        doubly_indirect_block = ospfs_block(indirect_block[indir_index(index)]);
+        
+        // Free the doubly indirect block's index
+        free_block(doubly_indirect_block[dir_index]); 
+        doubly_indirect_block[dir_index] = 0;
+
+        // If it's the last block in the doubly indirect block then we want to
+        // free the indirect block
+        if (!dir_index)
+        {
+            free_block(indirect_block[indir_index(index)]);
+            indirect_block[indir_index(index)] = 0;
+
+            // If we no longer need the doubly indirect block then remove it
+            if (!indir_index(index)) {
+                free_block(oi->oi_indirect2);
+                oi->oi_indirect2 = 0;
+            }
+        }
+
+    }
+
+    oi->oi_size = index*OSPFS_BLKSIZE;
+    return 0;
 }
 
 
