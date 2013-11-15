@@ -961,6 +961,10 @@ remove_block(ospfs_inode_t *oi)
             return -EIO;
         
         indirect_block = ospfs_block(oi->oi_indirect);
+        
+        if(!indirect_block)
+            return -EIO;
+
         free_block(indirect_block[num]);
         indirect_block[num] = 0;
 
@@ -977,7 +981,12 @@ remove_block(ospfs_inode_t *oi)
             return -EIO;
         
         indirect_block = ospfs_block(oi->oi_indirect2);
+        if (!indirect_block)
+            return -EIO;
+
         doubly_indirect_block = ospfs_block(indirect_block[indir_index(index)]);
+        if (!doubly_indirect_block)
+            return -EIO;
         
         // Free the doubly indirect block's index
         free_block(doubly_indirect_block[dir_index]); 
@@ -1038,7 +1047,7 @@ remove_block(ospfs_inode_t *oi)
 //         (The value that the final add_block or remove_block set it to
 //          is probably not correct).
 //
-//   EXERCISE: Finish off this function.
+//   EXERCISE[DONE]: Finish off this function.
 
 static int
 change_size(ospfs_inode_t *oi, uint32_t new_size)
@@ -1046,18 +1055,32 @@ change_size(ospfs_inode_t *oi, uint32_t new_size)
 	uint32_t old_size = oi->oi_size;
 	int r = 0;
 
+    // While the size of the file is less than our new desired size
 	while (ospfs_size2nblocks(oi->oi_size) < ospfs_size2nblocks(new_size)) {
-	        /* EXERCISE: Your code here */
-		return -EIO; // Replace this line
-	}
-	while (ospfs_size2nblocks(oi->oi_size) > ospfs_size2nblocks(new_size)) {
-	        /* EXERCISE: Your code here */
-		return -EIO; // Replace this line
+        // Add a block to the file
+        r = add_block(oi); 
+
+        // If adding the block returns a -EIO error then return
+        if (r == -EIO)
+            return r;
+        // If there is no space left in the disk then set the new_size back to
+        else if (r == -ENOSPC)
+            new_size = old_size;
 	}
 
-	/* EXERCISE: Make sure you update necessary file meta data
-	             and return the proper value. */
-	return -EIO; // Replace this line
+	while (ospfs_size2nblocks(oi->oi_size) > ospfs_size2nblocks(new_size)) {
+	        /* EXERCISE: Your code here */
+        // Remove block from the file
+        r = remove_block(oi);
+        if (r == -EIO)
+            return r;
+	}
+
+    // Set the new size of the file if the function was successful
+    if (r == 0)
+        oi->oi_size = new_size;
+
+    return r;
 }
 
 
