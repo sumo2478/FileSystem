@@ -831,7 +831,6 @@ add_block(ospfs_inode_t *oi)
         // allocate it 
         if ((n-1) < OSPFS_NDIRECT)
         {
-            eprintk("Adding indirect block\n");
             allocated[0] = allocate_block(); 
 
             // Make sure our allocation was successful
@@ -861,7 +860,6 @@ add_block(ospfs_inode_t *oi)
         // If we need to allocate a block for the doubly indirect block for the
         // first time
         if ((n-1) < OSPFS_NDIRECT + OSPFS_NINDIRECT) {
-            eprintk("Adding doubly indirect block\n");
             allocated[0] = allocate_block();
 
             // Make sure our allocation was successful
@@ -875,7 +873,6 @@ add_block(ospfs_inode_t *oi)
 
         // If we need to allocate a new indirect block
         if (((n - (OSPFS_NDIRECT + OSPFS_NINDIRECT)) % OSPFS_NINDIRECT) == 0) {
-            eprintk("Adding indirect block to doubly indirect block\n");
             allocated[1] = allocate_block();
 
             // Make sure our allocation was successful
@@ -1063,11 +1060,9 @@ change_size(ospfs_inode_t *oi, uint32_t new_size)
 {
 	uint32_t old_size = oi->oi_size;
 	int r = 0;
-    eprintk("Changing size...\n");
 
     // While the size of the file is less than our new desired size
 	while (ospfs_size2nblocks(oi->oi_size) < ospfs_size2nblocks(new_size)) {
-        eprintk("Adding block...\n");
         // Add a block to the file
         r = add_block(oi); 
 
@@ -1113,7 +1108,6 @@ change_size(ospfs_inode_t *oi, uint32_t new_size)
 static int
 ospfs_notify_change(struct dentry *dentry, struct iattr *attr)
 {
-    eprintk("Notified...\n");
 	struct inode *inode = dentry->d_inode;
 	ospfs_inode_t *oi = ospfs_inode(inode->i_ino);
 	int retval = 0;
@@ -1160,7 +1154,6 @@ ospfs_notify_change(struct dentry *dentry, struct iattr *attr)
 static ssize_t
 ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 {
-    eprintk("Reading file...\n");
 	ospfs_inode_t *oi = ospfs_inode(filp->f_dentry->d_inode->i_ino);
 	int retval = 0;
 	size_t amount = 0; // The amount of data that has been transferred so far
@@ -1254,13 +1247,11 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 	int retval = 0;
 	size_t amount = 0;
     int data_not_moved; // Stores the amount of data not moved
-    eprintk("Writing file\n");
 
 	// Support files opened with the O_APPEND flag.  To detect O_APPEND,
 	// use struct file's f_flags field and the O_APPEND bit.
 	// EXERCISE:[DONE] 
     if (filp->f_flags & O_APPEND) {
-        eprintk("Appending file\n");
         // Move the file pointer to the end of the block buffer
         *f_pos = oi->oi_size;
     }
@@ -1454,8 +1445,41 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 
 static int
 ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dentry) {
-	/* EXERCISE: Your code here. */
-	return -EINVAL;
+    ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
+    ospfs_direntry_t* new_direntry;
+    ospfs_inode_t *inode = ospfs_inode(src_dentry->d_inode->i_ino);
+
+    if (!inode)
+        return -EIO;
+
+    if (!dir_oi)
+        return -EIO;
+
+    // Check to make sure that the dst_dentry name is not too long
+    if (dst_dentry->d_name.len > OSPFS_MAXNAMELEN)
+        return -ENAMETOOLONG;
+
+    // TODO: Check 'symname'?
+
+    // Check to see if the file named the same as dst_dentry already exists in
+    // the given directory
+    if (find_direntry(dir_oi, dst_dentry->d_name.name, dst_dentry->d_name.len))
+        return -EEXIST;
+
+    // Obtain a blank direntry inside of the directory
+    new_direntry = create_blank_direntry(dir_oi);
+
+    if (IS_ERR(new_direntry))
+        return PTR_ERR(new_direntry);
+
+    // Initialize the new direntry
+    new_direntry->od_ino = src_dentry->d_inode->i_ino;    
+    memcpy(new_direntry->od_name, dst_dentry->d_name.name, dst_dentry->d_name.len);
+    
+    inode->oi_nlink++;
+
+    return 0;
+
 }
 
 // ospfs_create
@@ -1575,7 +1599,6 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
 static int
 ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 {
-    eprintk("Creating Symlink...\n");
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 
