@@ -45,7 +45,7 @@ close FOO;
 
 
     # test writing
-    # We use dd to write because it doesn't initially truncate, and it can
+    # 7 We use dd to write because it doesn't initially truncate, and it can
     # be told to seek forward to a particular point in the disk.
     [ "echo Bybye | dd bs=1 count=5 of=test/hello.txt conv=notrunc >/dev/null 2>&1 ; cat test/hello.txt",
       "Bybye, world!"
