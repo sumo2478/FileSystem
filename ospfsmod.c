@@ -557,7 +557,11 @@ ospfs_unlink(struct inode *dirino, struct dentry *dentry)
 	}
 
 	od->od_ino = 0;
-	oi->oi_nlink--;
+
+    // If we are deleting a symbolic link then only remove the link not the file
+    if (!(oi->oi_ftype == OSPFS_FTYPE_SYMLINK))
+	    oi->oi_nlink--;
+
 	return 0;
 }
 
@@ -808,9 +812,11 @@ add_block(ospfs_inode_t *oi)
     if (n >= OSPFS_MAXFILEBLKS)
         return -EIO;
 
-
     if (!new_block)
+    {
+        eprintk("No Space Error: when adding block\n");
         return -ENOSPC;
+    }
     else
         zero_out_block(new_block);
 
@@ -835,8 +841,10 @@ add_block(ospfs_inode_t *oi)
 
             // Make sure our allocation was successful
             if (!allocated[0])
+            {
                 free_block(new_block);
                 return -ENOSPC;
+            }
 
             // Zero out the newly allocated block
             zero_out_block(allocated[0]);
@@ -1410,6 +1418,7 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
     }
     
     od->od_ino = 0;
+    memset(od->od_name, 0, sizeof(od->od_name[0])*(OSPFS_MAXNAMELEN+1));
 
     return od;
 }
@@ -1601,9 +1610,60 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 {
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
+    ospfs_symlink_inode_t* new_symlink;
+    ospfs_direntry_t* new_direntry;
+    char* ptr_colon;
+    char* ptr_question;
 
-	/* EXERCISE: Your code here. */
-	return -EINVAL;
+    // If the name is too long or symname is too long than return an error
+    if (dentry->d_name.len > OSPFS_MAXNAMELEN || 
+        strlen(symname) > OSPFS_MAXSYMLINKLEN)
+        return -ENAMETOOLONG;
+
+    // If a file already exists with the dentry's name
+    if (find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len))
+        return -EEXIST;
+
+    // Create a new direntry
+    new_direntry = create_blank_direntry(dir_oi);
+
+    // Check to make sure there was no error in the creation of the direntry
+    if (IS_ERR(new_direntry))
+        return PTR_ERR(new_direntry);
+
+    // Find an empty inode entry
+    while (entry_ino < ospfs_super->os_ninodes)
+    {
+        new_symlink = (ospfs_symlink_inode_t *)ospfs_inode(entry_ino);
+
+        // If the inode is free then break out of the loop
+        if (new_symlink->oi_nlink == 0)
+            break;
+
+        entry_ino++;
+    }
+
+    // Check to see if we ran out of disk space
+    if (entry_ino >= ospfs_super->os_ninodes)
+        return -ENOSPC;
+
+    // Initialize the direntry
+    new_direntry->od_ino = entry_ino;
+    memcpy(new_direntry->od_name, dentry->d_name.name, dentry->d_name.len);
+
+    // Initialize the symlink
+    new_symlink->oi_size = strlen(symname);
+    new_symlink->oi_ftype = OSPFS_FTYPE_SYMLINK;
+    new_symlink->oi_nlink = 1;
+    memcpy(new_symlink->oi_symlink, symname, new_symlink->oi_size);
+
+    // If it is a conditional symlink then change the ':' to a '\0'
+    ptr_colon = strchr(new_symlink->oi_symlink, ':');
+    ptr_question = strchr(new_symlink->oi_symlink, '?');
+
+    if (ptr_colon && ptr_question)
+        *ptr_colon = '\0';
+
 
 	/* Execute this code after your function has successfully created the
 	   file.  Set entry_ino to the created file's inode number before
@@ -1636,9 +1696,31 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	ospfs_symlink_inode_t *oi =
 		(ospfs_symlink_inode_t *) ospfs_inode(dentry->d_inode->i_ino);
-	// Exercise: Your code here.
 
-	nd_set_link(nd, oi->oi_symlink);
+    // Check if it's a conditional symlink
+    char* ptr_conditional;
+    char* result = oi->oi_symlink;
+
+    ptr_conditional = strchr(oi->oi_symlink, '?');
+
+    if (ptr_conditional) {
+        // If the user is running as root
+        if (current->uid == 0)
+        {
+            result = ptr_conditional + 1;
+        }
+        else
+        {
+            ptr_conditional = strchr(oi->oi_symlink, '\0');
+
+            if (ptr_conditional)
+            {
+                result = ptr_conditional + 1;
+            }
+        }
+    }
+
+	nd_set_link(nd, result);
 	return (void *) 0;
 }
 

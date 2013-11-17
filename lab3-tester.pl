@@ -50,34 +50,34 @@ close FOO;
     [ "echo Bybye | dd bs=1 count=5 of=test/hello.txt conv=notrunc >/dev/null 2>&1 ; cat test/hello.txt",
       "Bybye, world!"
     ],
-    
+    # 8 
     [ "echo Hello | dd bs=1 count=5 of=test/hello.txt conv=notrunc >/dev/null 2>&1 ; cat test/hello.txt",
       "Hello, world!"
     ],
-    
+    # 9 
     [ "echo gi | dd bs=1 count=2 seek=7 of=test/hello.txt conv=notrunc >/dev/null 2>&1 ; cat test/hello.txt",
       "Hello, girld!"
     ],
-    
+    # 10 
     [ "echo worlds galore | dd bs=1 count=13 seek=7 of=test/hello.txt conv=notrunc >/dev/null 2>&1 ; cat test/hello.txt",
       "Hello, worlds galore"
     ],
-    
+    # 11 
     [ "echo 'Hello, world!' > test/hello.txt ; cat test/hello.txt",
       "Hello, world!"
     ],
     
-    # create a file
+    # 12 create a file
     [ 'touch test/file1 && echo $?',
       "0"
     ],
 
-    # read directory
+    # 13 read directory
     [ 'touch test/dir-contents.txt ; ls test | tee test/dir-contents.txt | grep file1',
       'file1'
     ],
 
-    # write files, remove them, then read dir again
+    # 14 write files, remove them, then read dir again
     [ 'ls test | dd bs=1 of=test/dir-contents.txt >/dev/null 2>&1; ' .
       ' touch test/foo test/bar test/baz && '.
       ' rm    test/foo test/bar test/baz && '.
@@ -85,36 +85,73 @@ close FOO;
       ''
     ],
 
-    # remove the last file
+    # 15 remove the last file
     [ 'rm -f test/dir-contents.txt && ls test | grep dir-contents.txt',
       ''
     ],
 
 
-    # write to a file
+    # 16 write to a file
     [ 'echo hello > test/file1 && cat test/file1',
       'hello'
     ],
     
-    # append to a file
+    # 17 append to a file
     [ 'echo hello > test/file1 ; echo goodbye >> test/file1 && cat test/file1',
       'hello goodbye'
     ],
 
-    # delete a file
+    # 18 delete a file
     [ 'rm -f test/file1 && ls test | grep file1',
       ''
     ],
 
-    # make a larger file for indirect blocks
+    # 19 make a larger file for indirect blocks
     [ 'yes | head -n 5632 > test/yes.txt && ls -l test/yes.txt | awk \'{ print $5 }\'',
       '11264'
     ],
    
-    # truncate the large file
+    # 20 truncate the large file
     [ 'echo truncernated11 > test/yes.txt | ls -l test/yes.txt | awk \'{ print $5 }\' ; rm test/yes.txt',
       '15'
     ],
+
+    # Test Conditional Symlinks
+
+    # 21 Conditional Symlink Test
+    [ 'cd test; ln -s root?root:notroot amiroot;
+       cat amiroot',
+       'root'
+    ],
+
+    # 22 Not root Test
+    [ 'cd test; su user -c "cat amiroot"; rm amiroot',
+      'not root'
+    ],
+
+
+    # Test hardlinks
+    # 21 Create a hard link
+    #[ 'ln test/link_test test/hard_link; cat test/hard_link',
+    #  'hello'
+    #],
+
+    # 22 Remove the original file
+    #[ 'rm test/link_test; cat test/hard_link',
+    #  'hello'
+    #],
+
+    # Test symlinks
+    
+    # 23 Create a symlink
+    #[ 'ln -s test/hard_link test/symlink; cat test/symlink',
+    #'hello'
+      #],
+
+    # 24 Remove original link for the symlink
+    #[ 'rm test/hard_link; cat test/symlink',
+    #  ''
+    #],
 
 );
 
